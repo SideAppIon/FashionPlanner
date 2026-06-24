@@ -5,6 +5,27 @@ import {
 } from '../lib/db'
 import { computeFreeSlots, weekdayKey, timeToMin } from '../lib/slots'
 import { zonedToInstant, instantToTzParts, tzToday, formatInTz, detectTz } from '../lib/tz'
+import { channelHref, channelMeta, channelExternal } from '../lib/channels'
+
+function Channels({ items }) {
+  if (!items || items.length === 0) return null
+  return (
+    <div className="channels">
+      {items.map((c, i) => {
+        const href = channelHref(c.type, c.value)
+        const meta = channelMeta(c.type)
+        if (!href) return null
+        const ext = channelExternal(c.type)
+        return (
+          <a key={i} className="channel" href={href}
+            {...(ext ? { target: '_blank', rel: 'noreferrer' } : {})}>
+            <span className="channel-icon">{meta.icon}</span>{meta.label}
+          </a>
+        )
+      })}
+    </div>
+  )
+}
 
 export default function PublicBooking() {
   const { slug } = useParams()
@@ -36,6 +57,7 @@ export default function PublicBooking() {
       <header className="public-head">
         <h1>{spec.displayName || 'Запись на услугу'}</h1>
         {spec.about && <p className="muted">{spec.about}</p>}
+        <Channels items={spec.channels} />
       </header>
       <BookingWidget spec={spec} services={services} />
       <footer className="public-foot muted small">Работает на FashionPlanner</footer>
