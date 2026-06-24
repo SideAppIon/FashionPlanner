@@ -3,7 +3,8 @@ import { useParams } from 'react-router-dom'
 import {
   findSpecialistBySlug, listServices, listSlotsForDay, createBooking,
 } from '../lib/db'
-import { computeFreeSlots, weekdayKey, todayStr, dateAtMinutes, timeToMin } from '../lib/slots'
+import { computeFreeSlots, weekdayKey, timeToMin } from '../lib/slots'
+import { zonedToInstant, instantToTzParts, tzToday, formatInTz, detectTz } from '../lib/tz'
 
 export default function PublicBooking() {
   const { slug } = useParams()
@@ -43,8 +44,9 @@ export default function PublicBooking() {
 }
 
 function BookingWidget({ spec, services }) {
+  const tz = spec.timezone || detectTz()
   const [service, setService] = useState(null)
-  const [date, setDate] = useState(todayStr())
+  const [date, setDate] = useState(tzToday(tz))
   const [time, setTime] = useState('')
   const [slots, setSlots] = useState(null)
   const [clientName, setClientName] = useState('')
@@ -58,11 +60,11 @@ function BookingWidget({ spec, services }) {
     setTime('')
     if (!service) { setSlots(null); return }
     setSlots(null)
-    listSlotsForDay(spec.id, date).then((daySlots) => {
+    listSlotsForDay(spec.id, date, tz).then((daySlots) => {
       if (!active) return
       const busyIntervals = daySlots.map((s) => {
-        const start = timeToMin(s.startAt.toDate().toTimeString().slice(0, 5))
-        return { startMin: start, endMin: start + s.durationMin }
+        const m = instantToTzParts(s.startAt.toDate(), tz).minutes
+        return { startMin: m, endMin: m + s.durationMin }
       })
       setSlots(computeFreeSlots({
         date,
@@ -71,10 +73,11 @@ function BookingWidget({ spec, services }) {
         durationMin: service.durationMin,
         busy: busyIntervals,
         now: new Date(),
+        timeZone: tz,
       }))
     })
     return () => { active = false }
-  }, [spec.id, date, service])
+  }, [spec.id, date, service, tz])
 
   async function submit(e) {
     e.preventDefault()
@@ -84,9 +87,9 @@ function BookingWidget({ spec, services }) {
     setBusy(true)
     try {
       // Перепроверяем занятость, чтобы снизить риск двойной записи.
-      const daySlots = await listSlotsForDay(spec.id, date)
+      const daySlots = await listSlotsForDay(spec.id, date, tz)
       const taken = daySlots.some((s) => {
-        const start = timeToMin(s.startAt.toDate().toTimeString().slice(0, 5))
+        const start = instantToTzParts(s.startAt.toDate(), tz).minutes
         const end = start + s.durationMin
         const ns = timeToMin(time)
         const ne = ns + service.durationMin
@@ -97,11 +100,11 @@ function BookingWidget({ spec, services }) {
         setTime('')
         return
       }
-      const startDate = dateAtMinutes(date, timeToMin(time))
+      const startDate = zonedToInstant(date, timeToMin(time), tz)
       await createBooking(spec.id, {
         service, startDate, clientName: clientName.trim(), clientPhone,
       })
-      setDone({ service, date, time })
+      setDone({ service, startDate, time })
     } catch (err) {
       setError(err.message)
     } finally {
@@ -115,9 +118,10 @@ function BookingWidget({ spec, services }) {
         <h2>Готово! Вы записаны</h2>
         <p>
           <strong>{done.service.name}</strong><br />
-          {new Date(done.date).toLocaleDateString('ru-RU', { day: '2-digit', month: 'long' })}, {done.time}<br />
+          {formatInTz(done.startDate, tz, { day: '2-digit', month: 'long', hour: '2-digit', minute: '2-digit' })}<br />
           {done.service.durationMin} мин · {done.service.price} ₽
         </p>
+        <p className="muted small">Время указано в поясе салона ({tz})</p>
         {spec.phone && <p className="muted small">Вопросы: {spec.phone}</p>}
         <button className="btn ghost" onClick={() => { setDone(null); setService(null); setTime('') }}>
           Записаться ещё
@@ -150,8 +154,9 @@ function BookingWidget({ spec, services }) {
       {service && (
         <div className="card stack">
           <h3>2. Дата и время</h3>
-          <input type="date" value={date} min={todayStr()}
+          <input type="date" value={date} min={tzToday(tz)}
             onChange={(e) => setDate(e.target.value)} />
+          <p className="muted small">Время указано в часовом поясе салона ({tz})</p>
           {slots === null && <p className="muted small">Загрузка слотов…</p>}
           {slots && slots.length === 0 && <p className="muted small">Нет свободного времени на эту дату.</p>}
           {slots && slots.length > 0 && (

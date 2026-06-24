@@ -3,6 +3,7 @@ import {
   query, where, orderBy, limit, writeBatch, Timestamp, serverTimestamp,
 } from 'firebase/firestore'
 import { db } from '../firebase'
+import { zonedToInstant } from './tz'
 
 // ---- Профиль специалиста ----
 export async function getProfile(uid) {
@@ -45,23 +46,29 @@ export async function deleteService(uid, id) {
 }
 
 // ---- Слоты (публичные интервалы занятости) на конкретный день ----
-export async function listSlotsForDay(uid, dateStr) {
-  const [y, mo, d] = dateStr.split('-').map(Number)
-  const start = Timestamp.fromDate(new Date(y, mo - 1, d, 0, 0, 0))
-  const end = Timestamp.fromDate(new Date(y, mo - 1, d, 23, 59, 59))
+// Границы дня берутся в зоне специалиста, запрос — по абсолютным моментам.
+export async function listSlotsForDay(uid, dateStr, timeZone) {
+  const start = timeZone
+    ? zonedToInstant(dateStr, 0, timeZone)
+    : new Date(`${dateStr}T00:00:00`)
+  const end = new Date(start.getTime() + 24 * 60 * 60 * 1000)
   const q = query(
     collection(db, 'specialists', uid, 'slots'),
-    where('startAt', '>=', start), where('startAt', '<=', end), orderBy('startAt'),
+    where('startAt', '>=', Timestamp.fromDate(start)),
+    where('startAt', '<', Timestamp.fromDate(end)),
+    orderBy('startAt'),
   )
   const snap = await getDocs(q)
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }))
 }
 
 // ---- Записи (для специалиста) ----
-export async function listUpcomingBookings(uid) {
+export async function listBookingsInRange(uid, startDate, endDate) {
   const q = query(
     collection(db, 'specialists', uid, 'bookings'),
-    where('startAt', '>=', Timestamp.now()), orderBy('startAt'),
+    where('startAt', '>=', Timestamp.fromDate(startDate)),
+    where('startAt', '<', Timestamp.fromDate(endDate)),
+    orderBy('startAt'),
   )
   const snap = await getDocs(q)
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }))

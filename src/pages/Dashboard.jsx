@@ -1,52 +1,80 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../auth/AuthContext'
 import {
-  getProfile, listServices, listUpcomingBookings,
+  getProfile, listServices, listBookingsInRange,
   listSlotsForDay, createBooking, deleteBooking,
 } from '../lib/db'
-import { computeFreeSlots, weekdayKey, todayStr, dateAtMinutes, timeToMin } from '../lib/slots'
-
-function fmtDateTime(ts) {
-  const d = ts?.toDate ? ts.toDate() : new Date(ts)
-  return d.toLocaleString('ru-RU', {
-    day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
-  })
-}
+import {
+  computeFreeSlots, weekdayKey, WEEKDAY_LABELS, timeToMin,
+  mondayOf, addDays, dayOfMonth,
+} from '../lib/slots'
+import {
+  zonedToInstant, instantToTzParts, tzToday, formatInTz, detectTz,
+} from '../lib/tz'
 
 export default function Dashboard() {
   const { user } = useAuth()
   const [profile, setProfile] = useState(null)
   const [services, setServices] = useState([])
   const [bookings, setBookings] = useState(null)
-  const [showForm, setShowForm] = useState(false)
+  const [weekStart, setWeekStart] = useState(null)
+  const [formDate, setFormDate] = useState(null) // выбранная дата для формы записи
 
-  async function reload() {
-    const [p, s, b] = await Promise.all([
-      getProfile(user.uid),
-      listServices(user.uid, true),
-      listUpcomingBookings(user.uid),
-    ])
-    setProfile(p)
-    setServices(s)
-    setBookings(b)
+  const tz = profile?.timezone || detectTz()
+
+  // Загружаем профиль + услуги один раз, инициализируем текущую неделю в зоне.
+  useEffect(() => {
+    Promise.all([getProfile(user.uid), listServices(user.uid, true)]).then(([p, s]) => {
+      setProfile(p)
+      setServices(s)
+      setWeekStart(mondayOf(tzToday(p?.timezone || detectTz())))
+    })
+  }, [user.uid])
+
+  const weekDates = useMemo(
+    () => (weekStart ? Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)) : []),
+    [weekStart],
+  )
+
+  async function loadBookings() {
+    if (!weekStart) return
+    const start = zonedToInstant(weekDates[0], 0, tz)
+    const end = new Date(zonedToInstant(weekDates[6], 0, tz).getTime() + 24 * 60 * 60 * 1000)
+    setBookings(await listBookingsInRange(user.uid, start, end))
   }
-  useEffect(() => { reload() }, [user.uid])
+  useEffect(() => { loadBookings() }, [weekStart, user.uid])
+
+  // Группируем записи по дате (в зоне специалиста).
+  const byDay = useMemo(() => {
+    const map = {}
+    for (const b of bookings || []) {
+      const { dateStr } = instantToTzParts(b.startAt.toDate(), tz)
+      ;(map[dateStr] ||= []).push(b)
+    }
+    return map
+  }, [bookings, tz])
 
   async function remove(b) {
     if (!confirm('Отменить запись?')) return
     await deleteBooking(user.uid, b.id)
-    await reload()
+    await loadBookings()
   }
 
+  const today = profile ? tzToday(tz) : null
   const needsSetup = profile && (!profile.slug || services.length === 0)
+  const monthLabel = weekStart
+    ? formatInTz(zonedToInstant(weekStart, 12 * 60, tz), tz, { month: 'long', year: 'numeric' })
+    : ''
+
+  if (!profile || !weekStart) return <div className="muted">Загрузка…</div>
 
   return (
-    <div className="stack" style={{ maxWidth: 720 }}>
+    <div className="stack">
       <div className="row between">
-        <h1>Записи</h1>
-        <button className="btn primary" onClick={() => setShowForm((v) => !v)}
-          disabled={services.length === 0}>
-          {showForm ? 'Закрыть' : '+ Новая запись'}
+        <h1>Календарь</h1>
+        <button className="btn primary" disabled={services.length === 0}
+          onClick={() => setFormDate(formDate ? null : today)}>
+          {formDate ? 'Закрыть' : '+ Новая запись'}
         </button>
       </div>
 
@@ -57,37 +85,61 @@ export default function Dashboard() {
         </div>
       )}
 
-      {showForm && (
+      {formDate && (
         <ManualBookingForm
-          uid={user.uid} profile={profile} services={services}
-          onDone={() => { setShowForm(false); reload() }}
+          uid={user.uid} profile={profile} services={services} tz={tz}
+          initialDate={formDate}
+          onDone={() => { setFormDate(null); loadBookings() }}
         />
       )}
 
-      <div className="stack">
-        {bookings === null && <div className="muted">Загрузка…</div>}
-        {bookings && bookings.length === 0 && <div className="muted">Предстоящих записей нет.</div>}
-        {bookings && bookings.map((b) => (
-          <div key={b.id} className="card booking-row">
-            <div className="booking-time">{fmtDateTime(b.startAt)}</div>
-            <div className="stack gap-0">
-              <strong>{b.serviceName}</strong>
-              <span className="muted small">
-                {b.clientName}{b.clientPhone ? ` · ${b.clientPhone}` : ''} · {b.durationMin} мин
-                {b.price ? ` · ${b.price} ₽` : ''}
-              </span>
-            </div>
-            <button className="btn ghost small danger" onClick={() => remove(b)}>Отменить</button>
+      <div className="card stack">
+        <div className="row between">
+          <div className="cal-nav">
+            <button className="btn ghost small" onClick={() => setWeekStart(addDays(weekStart, -7))}>‹</button>
+            <button className="btn ghost small" onClick={() => setWeekStart(mondayOf(today))}>Сегодня</button>
+            <button className="btn ghost small" onClick={() => setWeekStart(addDays(weekStart, 7))}>›</button>
           </div>
-        ))}
+          <strong className="cap">{monthLabel}</strong>
+        </div>
+
+        <div className="week-grid">
+          {weekDates.map((d) => {
+            const items = (byDay[d] || []).slice().sort(
+              (a, b) => a.startAt.toDate() - b.startAt.toDate())
+            return (
+              <div key={d} className={`day-col ${d === today ? 'is-today' : ''}`}>
+                <button className="day-head" onClick={() => setFormDate(d)}
+                  title="Добавить запись на этот день">
+                  <span className="dow">{WEEKDAY_LABELS[weekdayKey(d)]}</span>
+                  <span className="dnum">{dayOfMonth(d)}</span>
+                </button>
+                <div className="day-body">
+                  {items.length === 0 && <div className="day-empty">—</div>}
+                  {items.map((b) => (
+                    <div key={b.id} className="ev" onClick={() => remove(b)}
+                      title="Нажмите, чтобы отменить">
+                      <span className="ev-time">
+                        {formatInTz(b.startAt.toDate(), tz, { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                      <span className="ev-name">{b.serviceName}</span>
+                      <span className="ev-client">{b.clientName}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+        <p className="muted small">Время в поясе: {tz}. Нажмите на запись, чтобы отменить.</p>
       </div>
     </div>
   )
 }
 
-function ManualBookingForm({ uid, profile, services, onDone }) {
+function ManualBookingForm({ uid, profile, services, tz, initialDate, onDone }) {
   const [serviceId, setServiceId] = useState(services[0]?.id || '')
-  const [date, setDate] = useState(todayStr())
+  const [date, setDate] = useState(initialDate)
   const [time, setTime] = useState('')
   const [slots, setSlots] = useState([])
   const [clientName, setClientName] = useState('')
@@ -97,29 +149,30 @@ function ManualBookingForm({ uid, profile, services, onDone }) {
 
   const service = services.find((s) => s.id === serviceId)
 
+  useEffect(() => { setDate(initialDate) }, [initialDate])
+
   useEffect(() => {
     let active = true
     setTime('')
     if (!service) { setSlots([]); return }
-    listSlotsForDay(uid, date).then((daySlots) => {
+    listSlotsForDay(uid, date, tz).then((daySlots) => {
       if (!active) return
       const busyIntervals = daySlots.map((s) => {
-        const start = timeToMin(
-          s.startAt.toDate().toTimeString().slice(0, 5))
-        return { startMin: start, endMin: start + s.durationMin }
+        const m = instantToTzParts(s.startAt.toDate(), tz).minutes
+        return { startMin: m, endMin: m + s.durationMin }
       })
-      const free = computeFreeSlots({
+      setSlots(computeFreeSlots({
         date,
         workingDay: profile?.workingHours?.[weekdayKey(date)],
         slotStep: profile?.slotStep || 30,
         durationMin: service.durationMin,
         busy: busyIntervals,
         now: new Date(),
-      })
-      setSlots(free)
+        timeZone: tz,
+      }))
     })
     return () => { active = false }
-  }, [uid, date, serviceId])
+  }, [uid, date, serviceId, tz])
 
   async function submit(e) {
     e.preventDefault()
@@ -128,7 +181,7 @@ function ManualBookingForm({ uid, profile, services, onDone }) {
     if (!clientName.trim()) { setError('Укажите имя клиента'); return }
     setBusy(true)
     try {
-      const startDate = dateAtMinutes(date, timeToMin(time))
+      const startDate = zonedToInstant(date, timeToMin(time), tz)
       await createBooking(uid, { service, startDate, clientName: clientName.trim(), clientPhone })
       onDone()
     } catch (err) {
@@ -152,7 +205,7 @@ function ManualBookingForm({ uid, profile, services, onDone }) {
         </div>
         <div className="stack">
           <label>Дата</label>
-          <input type="date" value={date} min={todayStr()}
+          <input type="date" value={date} min={tzToday(tz)}
             onChange={(e) => setDate(e.target.value)} />
         </div>
       </div>

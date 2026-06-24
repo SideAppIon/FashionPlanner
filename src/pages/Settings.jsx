@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useAuth } from '../auth/AuthContext'
 import { getProfile, saveProfile, findSpecialistBySlug } from '../lib/db'
 import { WEEKDAYS, WEEKDAY_LABELS, DEFAULT_WORKING_HOURS } from '../lib/slots'
+import { detectTz, listTimeZones } from '../lib/tz'
 
 function slugify(s) {
   return s.toLowerCase().trim()
@@ -24,6 +25,7 @@ export default function Settings() {
         phone: p?.phone || '',
         about: p?.about || '',
         slotStep: p?.slotStep || 30,
+        timezone: p?.timezone || detectTz(),
         workingHours: p?.workingHours || DEFAULT_WORKING_HOURS,
       })
     })
@@ -58,6 +60,7 @@ export default function Settings() {
       phone: form.phone,
       about: form.about,
       slotStep: Number(form.slotStep),
+      timezone: form.timezone,
       workingHours: form.workingHours,
     })
     set({ slug })
@@ -95,6 +98,15 @@ export default function Settings() {
 
       <div className="card stack">
         <h3>График работы</h3>
+
+        <label>Часовой пояс</label>
+        <select value={form.timezone} onChange={(e) => set({ timezone: e.target.value })}>
+          {listTimeZones().map((tz) => <option key={tz} value={tz}>{tz}</option>)}
+        </select>
+        <p className="muted small">
+          Время записей и расписания указывается в этом поясе. Клиент видит время салона.
+        </p>
+
         <label>Шаг сетки записи (мин)</label>
         <select value={form.slotStep} onChange={(e) => set({ slotStep: e.target.value })}>
           {[15, 20, 30, 60].map((v) => <option key={v} value={v}>{v}</option>)}
