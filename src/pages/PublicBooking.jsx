@@ -8,19 +8,22 @@ import { zonedToInstant, instantToTzParts, tzToday, formatInTz, detectTz } from 
 import { channelHref, channelMeta, channelExternal } from '../lib/channels'
 
 function Channels({ items }) {
-  if (!items || items.length === 0) return null
+  const list = (items || []).filter((c) => channelHref(c.type, c.value))
+  if (list.length === 0) return null
   return (
     <div className="channels">
-      {items.map((c, i) => {
+      {list.map((c, i) => {
         const href = channelHref(c.type, c.value)
         const meta = channelMeta(c.type)
-        if (!href) return null
         const ext = channelExternal(c.type)
         return (
-          <a key={i} className="channel" href={href}
-            {...(ext ? { target: '_blank', rel: 'noreferrer' } : {})}>
-            <span className="channel-icon">{meta.icon}</span>{meta.label}
-          </a>
+          <div key={i} className="channel">
+            <span className="channel-label">{meta.icon} {c.label || meta.label}</span>
+            <a className="channel-link" href={href}
+              {...(ext ? { target: '_blank', rel: 'noreferrer' } : {})}>
+              {c.value}
+            </a>
+          </div>
         )
       })}
     </div>

@@ -3,7 +3,7 @@ import { useAuth } from '../auth/AuthContext'
 import { getProfile, saveProfile, findSpecialistBySlug } from '../lib/db'
 import { WEEKDAYS, WEEKDAY_LABELS, DEFAULT_WORKING_HOURS } from '../lib/slots'
 import { detectTz, listTimeZones, formatInTz } from '../lib/tz'
-import { CHANNEL_TYPES } from '../lib/channels'
+import { CHANNEL_TYPES, channelMeta } from '../lib/channels'
 
 function slugify(s) {
   return s.toLowerCase().trim()
@@ -39,10 +39,18 @@ export default function Settings() {
   const setDay = (key, patch) =>
     setForm((f) => ({ ...f, workingHours: { ...f.workingHours, [key]: { ...f.workingHours[key], ...patch } } }))
 
-  const addChannel = () => set({ channels: [...form.channels, { type: 'telegram', value: '' }] })
+  const addChannel = () =>
+    set({ channels: [...form.channels, { type: 'telegram', label: 'Telegram', value: '' }] })
   const setChannel = (i, patch) =>
     set({ channels: form.channels.map((c, idx) => (idx === i ? { ...c, ...patch } : c)) })
   const removeChannel = (i) => set({ channels: form.channels.filter((_, idx) => idx !== i) })
+  // При смене типа подставляем готовую подпись, если пользователь её не менял.
+  const setChannelType = (i, type) =>
+    set({ channels: form.channels.map((c, idx) => {
+      if (idx !== i) return c
+      const wasDefault = !c.label || c.label === channelMeta(c.type).label
+      return { ...c, type, label: wasDefault ? channelMeta(type).label : c.label }
+    }) })
 
   const publicUrl = form.slug
     ? `${location.origin}${location.pathname}#/b/${form.slug}`
@@ -70,7 +78,11 @@ export default function Settings() {
       timezone: form.timezone,
       channels: form.channels
         .filter((c) => c.value.trim())
-        .map((c) => ({ type: c.type, value: c.value.trim() })),
+        .map((c) => ({
+          type: c.type,
+          label: (c.label || channelMeta(c.type).label).trim(),
+          value: c.value.trim(),
+        })),
       workingHours: form.workingHours,
     })
     set({ slug })
@@ -115,18 +127,24 @@ export default function Settings() {
         )}
 
         {form.channels.map((c, i) => {
-          const meta = CHANNEL_TYPES.find((t) => t.key === c.type) || CHANNEL_TYPES[0]
+          const meta = channelMeta(c.type)
           return (
-            <div key={i} className="channel-row">
-              <select value={c.type} onChange={(e) => setChannel(i, { type: e.target.value })}>
-                {CHANNEL_TYPES.map((t) => (
-                  <option key={t.key} value={t.key}>{t.icon} {t.label}</option>
-                ))}
-              </select>
+            <div key={i} className="channel-edit">
+              <div className="channel-edit-top">
+                <select value={c.type} onChange={(e) => setChannelType(i, e.target.value)}>
+                  {CHANNEL_TYPES.map((t) => (
+                    <option key={t.key} value={t.key}>{t.icon} {t.label}</option>
+                  ))}
+                </select>
+                <button type="button" className="btn ghost small danger"
+                  onClick={() => removeChannel(i)} aria-label="Удалить">✕</button>
+              </div>
+              <label>Подпись</label>
+              <input value={c.label} placeholder={meta.label}
+                onChange={(e) => setChannel(i, { label: e.target.value })} />
+              <label>Ссылка / контакт</label>
               <input value={c.value} placeholder={meta.placeholder}
                 onChange={(e) => setChannel(i, { value: e.target.value })} />
-              <button type="button" className="btn ghost small danger"
-                onClick={() => removeChannel(i)} aria-label="Удалить">✕</button>
             </div>
           )
         })}
