@@ -1,0 +1,50 @@
+rules_version = '2';
+
+// Модель данных:
+//   specialists/{uid}                 — профиль специалиста (публичное чтение)
+//   specialists/{uid}/services/{id}   — типы услуг (публичное чтение)
+//   specialists/{uid}/slots/{id}      — занятые интервалы БЕЗ ПД (публичное чтение)
+//   specialists/{uid}/bookings/{id}   — записи с контактами клиента (только владелец)
+//
+// При записи клиент создаёт ОДНОВРЕМЕННО slot (публичный, без ПД) и booking
+// (с именем/телефоном, читает только специалист). Так свободные слоты считаются
+// публично, а персональные данные не утекают.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isOwner(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    match /specialists/{uid} {
+      allow read: if true;
+      allow write: if isOwner(uid);
+
+      match /services/{serviceId} {
+        allow read: if true;
+        allow write: if isOwner(uid);
+      }
+
+      // Публичные интервалы занятости — без персональных данных.
+      match /slots/{slotId} {
+        allow read: if true;
+        allow create: if request.resource.data.keys().hasOnly(
+                           ['serviceId','serviceName','startAt','durationMin','createdAt'])
+                      && request.resource.data.durationMin is int
+                      && request.resource.data.durationMin > 0
+                      && request.resource.data.startAt is timestamp;
+        allow update, delete: if isOwner(uid);
+      }
+
+      // Записи с контактами — читает/правит только специалист, создаёт кто угодно.
+      match /bookings/{bookingId} {
+        allow read, update, delete: if isOwner(uid);
+        allow create: if request.resource.data.keys().hasAll(
+                           ['serviceId','clientName','startAt','durationMin'])
+                      && request.resource.data.startAt is timestamp
+                      && request.resource.data.durationMin is int;
+      }
+    }
+  }
+}
