@@ -75,7 +75,7 @@ export async function listBookingsInRange(uid, startDate, endDate) {
 }
 
 // Создаёт одновременно публичный slot и приватный booking с одним id.
-export async function createBooking(uid, { service, startDate, clientName, clientPhone }) {
+export async function createBooking(uid, { service, startDate, clientName, clientPhone, comment }) {
   const batch = writeBatch(db)
   const id = doc(collection(db, 'specialists', uid, 'bookings')).id
   const startAt = Timestamp.fromDate(startDate)
@@ -92,6 +92,7 @@ export async function createBooking(uid, { service, startDate, clientName, clien
     price: service.price ?? null,
     clientName,
     clientPhone: clientPhone || '',
+    comment: comment || '',
     status: 'pending',
   })
   await batch.commit()

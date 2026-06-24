@@ -51,6 +51,7 @@ function BookingWidget({ spec, services }) {
   const [slots, setSlots] = useState(null)
   const [clientName, setClientName] = useState('')
   const [clientPhone, setClientPhone] = useState('')
+  const [comment, setComment] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [done, setDone] = useState(null)
@@ -102,7 +103,7 @@ function BookingWidget({ spec, services }) {
       }
       const startDate = zonedToInstant(date, timeToMin(time), tz)
       await createBooking(spec.id, {
-        service, startDate, clientName: clientName.trim(), clientPhone,
+        service, startDate, clientName: clientName.trim(), clientPhone, comment: comment.trim(),
       })
       setDone({ service, startDate, time })
     } catch (err) {
@@ -179,6 +180,9 @@ function BookingWidget({ spec, services }) {
           <label>Телефон</label>
           <input value={clientPhone} onChange={(e) => setClientPhone(e.target.value)}
             placeholder="+7 ..." />
+          <label>Комментарий</label>
+          <textarea rows={2} value={comment} onChange={(e) => setComment(e.target.value)}
+            placeholder="Пожелания к записи (необязательно)" />
           {error && <div className="error">{error}</div>}
           <button className="btn primary" disabled={busy}>
             {busy ? '…' : `Записаться · ${service.price} ₽`}

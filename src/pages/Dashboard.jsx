@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../auth/AuthContext'
+import Modal from '../components/Modal'
 import {
   getProfile, listServices, listBookingsInRange,
   listSlotsForDay, createBooking, deleteBooking,
@@ -19,6 +20,7 @@ export default function Dashboard() {
   const [bookings, setBookings] = useState(null)
   const [weekStart, setWeekStart] = useState(null)
   const [formDate, setFormDate] = useState(null) // выбранная дата для формы записи
+  const [selected, setSelected] = useState(null) // запись, открытая в карточке
 
   const tz = profile?.timezone || detectTz()
 
@@ -57,6 +59,7 @@ export default function Dashboard() {
   async function remove(b) {
     if (!confirm('Отменить запись?')) return
     await deleteBooking(user.uid, b.id)
+    setSelected(null)
     await loadBookings()
   }
 
@@ -117,8 +120,8 @@ export default function Dashboard() {
                 <div className="day-body">
                   {items.length === 0 && <div className="day-empty">—</div>}
                   {items.map((b) => (
-                    <div key={b.id} className="ev" onClick={() => remove(b)}
-                      title="Нажмите, чтобы отменить">
+                    <div key={b.id} className="ev" onClick={() => setSelected(b)}
+                      title="Подробнее о клиенте">
                       <span className="ev-time">
                         {formatInTz(b.startAt.toDate(), tz, { hour: '2-digit', minute: '2-digit' })}
                       </span>
@@ -131,9 +134,54 @@ export default function Dashboard() {
             )
           })}
         </div>
-        <p className="muted small">Время в поясе: {tz}. Нажмите на запись, чтобы отменить.</p>
+        <p className="muted small">Время в поясе: {tz}. Нажмите на запись, чтобы открыть карточку клиента.</p>
       </div>
+
+      {selected && (
+        <BookingDetails booking={selected} tz={tz}
+          onClose={() => setSelected(null)} onCancel={() => remove(selected)} />
+      )}
     </div>
+  )
+}
+
+function BookingDetails({ booking: b, tz, onClose, onCancel }) {
+  const when = formatInTz(b.startAt.toDate(), tz, {
+    weekday: 'short', day: '2-digit', month: 'long',
+    hour: '2-digit', minute: '2-digit',
+  })
+  return (
+    <Modal title="Запись" onClose={onClose}>
+      <div className="stack">
+        <div className="detail-when">{when}</div>
+
+        <dl className="details">
+          <dt>Услуга</dt>
+          <dd>{b.serviceName}</dd>
+
+          <dt>Длительность</dt>
+          <dd>{b.durationMin} мин{b.price ? ` · ${b.price} ₽` : ''}</dd>
+
+          <dt>Клиент</dt>
+          <dd>{b.clientName}</dd>
+
+          <dt>Телефон</dt>
+          <dd>{b.clientPhone
+            ? <a href={`tel:${b.clientPhone.replace(/[^+\d]/g, '')}`}>{b.clientPhone}</a>
+            : <span className="muted">не указан</span>}</dd>
+
+          {b.comment && (<>
+            <dt>Комментарий</dt>
+            <dd>{b.comment}</dd>
+          </>)}
+        </dl>
+
+        <div className="row between">
+          <button className="btn ghost" onClick={onClose}>Закрыть</button>
+          <button className="btn danger-solid" onClick={onCancel}>Отменить запись</button>
+        </div>
+      </div>
+    </Modal>
   )
 }
 
@@ -144,6 +192,7 @@ function ManualBookingForm({ uid, profile, services, tz, initialDate, onDone }) 
   const [slots, setSlots] = useState([])
   const [clientName, setClientName] = useState('')
   const [clientPhone, setClientPhone] = useState('')
+  const [comment, setComment] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
@@ -182,7 +231,9 @@ function ManualBookingForm({ uid, profile, services, tz, initialDate, onDone }) 
     setBusy(true)
     try {
       const startDate = zonedToInstant(date, timeToMin(time), tz)
-      await createBooking(uid, { service, startDate, clientName: clientName.trim(), clientPhone })
+      await createBooking(uid, {
+        service, startDate, clientName: clientName.trim(), clientPhone, comment: comment.trim(),
+      })
       onDone()
     } catch (err) {
       setError(err.message)
@@ -233,6 +284,10 @@ function ManualBookingForm({ uid, profile, services, tz, initialDate, onDone }) 
           <input value={clientPhone} onChange={(e) => setClientPhone(e.target.value)} />
         </div>
       </div>
+
+      <label>Комментарий</label>
+      <textarea rows={2} value={comment} onChange={(e) => setComment(e.target.value)}
+        placeholder="Пожелания, детали…" />
 
       {error && <div className="error">{error}</div>}
       <div><button className="btn primary" disabled={busy}>Создать запись</button></div>

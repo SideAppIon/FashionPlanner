@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useAuth } from '../auth/AuthContext'
 import { getProfile, saveProfile, findSpecialistBySlug } from '../lib/db'
 import { WEEKDAYS, WEEKDAY_LABELS, DEFAULT_WORKING_HOURS } from '../lib/slots'
-import { detectTz, listTimeZones } from '../lib/tz'
+import { detectTz, listTimeZones, formatInTz } from '../lib/tz'
 
 function slugify(s) {
   return s.toLowerCase().trim()
@@ -99,12 +99,13 @@ export default function Settings() {
       <div className="card stack">
         <h3>График работы</h3>
 
-        <label>Часовой пояс</label>
+        <label>Часовой пояс салона</label>
         <select value={form.timezone} onChange={(e) => set({ timezone: e.target.value })}>
           {listTimeZones().map((tz) => <option key={tz} value={tz}>{tz}</option>)}
         </select>
         <p className="muted small">
-          Время записей и расписания указывается в этом поясе. Клиент видит время салона.
+          Сейчас в этом поясе: <strong>{formatInTz(new Date(), form.timezone, { hour: '2-digit', minute: '2-digit', day: '2-digit', month: 'short' })}</strong>.
+          Время всех записей и расписания указывается в нём, клиент видит время салона.
         </p>
 
         <label>Шаг сетки записи (мин)</label>
