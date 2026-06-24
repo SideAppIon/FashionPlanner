@@ -18,9 +18,9 @@ export function minToTime(min) {
 }
 
 // 'YYYY-MM-DD' + минуты от полуночи -> локальный Date
-export function dateAtMinutes(dateStr, min) {
+export function dateAtMinutes(dateStr, min = 0) {
   const [y, mo, d] = dateStr.split('-').map(Number)
-  return new Date(y, mo - 1, min === undefined ? 1 : 0, 0, min || 0, 0, 0)
+  return new Date(y, mo - 1, d, 0, min, 0, 0)
 }
 
 export function weekdayKey(dateStr) {
