@@ -314,6 +314,18 @@ textarea { resize: vertical; }
 .service-pick.active { border-color: var(--brand); box-shadow: 0 0 0 3px rgba(124, 77, 255, .15); }
 .success-box { text-align: center; align-items: center; animation: pop .4s ease both; }
 
+/* Demo ribbon */
+.demo-ribbon {
+  background: linear-gradient(90deg, #7c4dff, #a78bff);
+  color: #fff;
+  text-align: center;
+  font-size: .82rem;
+  font-weight: 600;
+  letter-spacing: .02em;
+  padding: 8px 12px;
+  border-radius: 10px;
+}
+
 /* Каналы связи на странице записи: подпись + ссылка снизу */
 .channels { display: flex; flex-direction: column; gap: 12px; margin-top: 16px; }
 .channel {

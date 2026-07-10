@@ -7,6 +7,8 @@ import Dashboard from './pages/Dashboard'
 import Services from './pages/Services'
 import Settings from './pages/Settings'
 import PublicBooking from './pages/PublicBooking'
+import DemoClient from './pages/DemoClient'
+import DemoCabinet from './pages/DemoCabinet'
 
 function NotConfigured() {
   return (
@@ -34,6 +36,10 @@ export default function App() {
 
   return (
     <Routes>
+      {/* Демо-страницы (только по прямой ссылке, тестовые данные, без базы) */}
+      <Route path="/demo/client" element={<DemoClient />} />
+      <Route path="/demo/cabinet" element={<DemoCabinet />} />
+
       {/* Публичная страница записи клиента */}
       <Route path="/b/:slug" element={<PublicBooking />} />
 
